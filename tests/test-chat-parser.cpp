@@ -136,6 +136,66 @@ static void test_reasoning() {
     assert_equals(variant, std::string("REASONING</think>ok"), msg.content);
     assert_equals(variant, std::string(""), msg.reasoning_content);
   }
+  // Test GLM-4 parsing - reasoning content followed by "</think>" and then regular content
+  {
+      common_chat_syntax syntax = {
+          /* .format = */ COMMON_CHAT_FORMAT_GLM4,
+          /* .reasoning_format = */ COMMON_REASONING_FORMAT_DEEPSEEK,
+          /* .reasoning_in_content = */ false,
+          /* .thinking_forced_open = */ false,
+          /* .parse_tool_calls = */ true,
+      };
+      const std::string variant("glm4_reasoning");
+      const std::string input = "<think>I need to calculate 2+2</think>The answer is 4";
+      auto              msg   = common_chat_parse(input, false, syntax);
+      assert_equals(variant, std::string("I need to calculate 2+2"), msg.reasoning_content);
+      assert_equals(variant, std::string("The answer is 4"), msg.content);
+  }
+  // Test GLM-4 parsing - empty think tags
+  {
+      common_chat_syntax syntax = {
+          /* .format = */ COMMON_CHAT_FORMAT_GLM4,
+          /* .reasoning_format = */ COMMON_REASONING_FORMAT_DEEPSEEK,
+          /* .reasoning_in_content = */ false,
+          /* .thinking_forced_open = */ false,
+          /* .parse_tool_calls = */ true,
+      };
+      const std::string variant("glm4_empty_think");
+      const std::string input = "<think></think>Answer";
+      auto              msg   = common_chat_parse(input, false, syntax);
+      assert_equals(variant, std::string(""), msg.reasoning_content);
+      assert_equals(variant, std::string("Answer"), msg.content);
+  }
+  // Test GLM-4 parsing - reasoning_format none - should not extract reasoning
+  {
+      common_chat_syntax syntax = {
+          /* .format = */ COMMON_CHAT_FORMAT_GLM4,
+          /* .reasoning_format = */ COMMON_REASONING_FORMAT_NONE,
+          /* .reasoning_in_content = */ false,
+          /* .thinking_forced_open = */ false,
+          /* .parse_tool_calls = */ true,
+      };
+      const std::string variant("glm4_reasoning_format_none");
+      const std::string input = "<think>Reasoning</think>Answer";
+      auto              msg   = common_chat_parse(input, false, syntax);
+      assert_equals(variant, std::string("<think>Reasoning</think>Answer"), msg.content);
+      assert_equals(variant, std::string(""), msg.reasoning_content);
+  }
+  // Test GLM-4 parsing - thinking_forced_open without end tag
+  {
+      common_chat_syntax syntax = {
+          /* .format = */ COMMON_CHAT_FORMAT_GLM4,
+          /* .reasoning_format = */ COMMON_REASONING_FORMAT_DEEPSEEK,
+          /* .reasoning_in_content = */ false,
+          /* .thinking_forced_open = */ true,
+          /* .parse_tool_calls = */ true,
+      };
+      const std::string variant("glm4_thinking_forced_open");
+      const std::string input = "Reasoning</think>Answer";
+      auto              msg   = common_chat_parse(input, false, syntax);
+      assert_equals(variant, std::string("Reasoning"), msg.reasoning_content);
+      assert_equals(variant, std::string("Answer"), msg.content);
+  }
 }
 
 static void test_regex() {

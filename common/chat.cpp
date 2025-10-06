@@ -640,6 +640,8 @@ const char * common_chat_format_name(common_chat_format format) {
         case COMMON_CHAT_FORMAT_SEED_OSS: return "Seed-OSS";
         case COMMON_CHAT_FORMAT_NEMOTRON_V2: return "Nemotron V2";
         case COMMON_CHAT_FORMAT_APERTUS: return "Apertus";
+        case COMMON_CHAT_FORMAT_GLM4:
+            return "GLM-4";
         default:
             throw std::runtime_error("Unknown chat format");
     }
@@ -1407,6 +1409,40 @@ static common_chat_params common_chat_params_init_apertus(const common_chat_temp
     }
     return data;
 }
+
+static common_chat_params common_chat_params_init_glm4(const common_chat_template &    tmpl,
+                                                       const struct templates_params & inputs) {
+    common_chat_params data;
+
+    // Pass thinking context for GLM-4 template
+    json additional_context = {
+        { "thinking", inputs.enable_thinking },
+    };
+
+    auto prompt = apply(tmpl, inputs,
+                        /* messages_override= */ inputs.messages,
+                        /* tools_override= */ std::nullopt, additional_context);
+    data.prompt = prompt;
+    data.format = COMMON_CHAT_FORMAT_GLM4;
+
+    // GLM-4.5 templates may end with <think> tag when thinking is enabled
+    if (string_ends_with(data.prompt, "<think>")) {
+        if (!inputs.enable_thinking) {
+            data.prompt += "</think>";
+        } else {
+            data.thinking_forced_open = true;
+        }
+    }
+
+    // Preserve think tags for proper parsing
+    data.preserved_tokens = {
+        "<think>",
+        "</think>",
+    };
+
+    return data;
+}
+
 static void common_chat_parse_llama_3_1(common_chat_msg_parser & builder, bool with_builtin_tools = false) {
     if (!builder.syntax().parse_tool_calls) {
         builder.add_content(builder.consume_rest());
@@ -2497,6 +2533,39 @@ static void common_chat_parse_apertus(common_chat_msg_parser & builder) {
     builder.add_content(builder.consume_rest());
 }
 
+static void common_chat_parse_glm4(common_chat_msg_parser & builder) {
+    // GLM-4 outputs reasoning content between "<think>" and "</think>" tags, similar to DeepSeek
+    LOG_DBG("%s: thinking_forced_open: %s\n", __func__, std::to_string(builder.syntax().thinking_forced_open).c_str());
+
+    auto start_pos       = builder.pos();
+    auto found_end_think = builder.try_find_literal("</think>");
+    builder.move_to(start_pos);
+
+    if (builder.syntax().thinking_forced_open && !builder.is_partial() && !found_end_think) {
+        LOG_DBG("%s: no end_think, not partial, adding content\n", __func__);
+        builder.add_content(builder.consume_rest());
+    } else if (builder.try_parse_reasoning("<think>", "</think>")) {
+        // If reasoning was parsed successfully, the remaining content is regular content
+        LOG_DBG("%s: parsed reasoning, adding content\n", __func__);
+        builder.add_content(builder.consume_rest());
+    } else {
+        if (builder.syntax().reasoning_format == COMMON_REASONING_FORMAT_NONE) {
+            LOG_DBG("%s: reasoning_format none, adding content\n", __func__);
+            builder.add_content(builder.consume_rest());
+            return;
+        }
+        // If no reasoning tags found, check if we should treat everything as reasoning
+        if (builder.syntax().thinking_forced_open) {
+            // If thinking is forced open but no tags found, treat everything as reasoning
+            LOG_DBG("%s: thinking_forced_open, adding reasoning content\n", __func__);
+            builder.add_reasoning_content(builder.consume_rest());
+        } else {
+            LOG_DBG("%s: no thinking_forced_open, adding content\n", __func__);
+            builder.add_content(builder.consume_rest());
+        }
+    }
+}
+
 static void common_chat_parse_seed_oss(common_chat_msg_parser & builder) {
     // Parse thinking tags first - this handles the main reasoning content
     builder.try_parse_reasoning("<seed:think>", "</seed:think>");
@@ -2746,6 +2815,14 @@ static common_chat_params common_chat_templates_apply_jinja(
         return common_chat_params_init_apertus(tmpl, params);
     }
 
+    // GLM-4: detect based on gMASK marker and think tags
+    // GLM-4.5 models use <think> tags for reasoning, similar to DeepSeek
+    if (src.find("[gMASK]<sop>") != std::string::npos &&
+        (src.find("<think>") != std::string::npos || src.find("</think>") != std::string::npos) &&
+        params.json_schema.is_null()) {
+        return common_chat_params_init_glm4(tmpl, params);
+    }
+
     // Use generic handler when mixing tools + JSON schema.
     // TODO: support that mix in handlers below.
     if ((params.tools.is_array() && params.json_schema.is_object())) {
@@ -2922,6 +2999,9 @@ static void common_chat_parse(common_chat_msg_parser & builder) {
             break;
         case COMMON_CHAT_FORMAT_APERTUS:
             common_chat_parse_apertus(builder);
+            break;
+        case COMMON_CHAT_FORMAT_GLM4:
+            common_chat_parse_glm4(builder);
             break;
         default:
             throw std::runtime_error(std::string("Unsupported format: ") + common_chat_format_name(builder.syntax().format));
