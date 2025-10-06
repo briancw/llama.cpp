@@ -2728,6 +2728,11 @@ static common_chat_params common_chat_templates_apply_jinja(
         return common_chat_params_init_granite(tmpl, params);
     }
 
+    // GLM models
+    if ((src.find("gMASK") != std::string::npos && params.json_schema.is_null())) {
+        return common_chat_params_init_without_tools(tmpl, params);
+    }
+
     // Hermes 2/3 Pro, Qwen 2.5 Instruct (w/ tools)
     if (src.find("<tool_call>") != std::string::npos && params.json_schema.is_null()) {
         return common_chat_params_init_hermes_2_pro(tmpl, params);
@@ -2858,10 +2863,7 @@ static common_chat_params common_chat_templates_apply_legacy(
     
     // Detect GLM templates and set appropriate format for reasoning content extraction
     const auto & template_source = tmpls->template_default->source();
-    if (template_source.find("chatglm") != std::string::npos || 
-        template_source.find("glm") != std::string::npos ||
-        template_source.find("[gMASK]") != std::string::npos ||
-        template_source.find("<|assistant|>") != std::string::npos) {
+    if (template_source.find("[gMASK]") != std::string::npos != std::string::npos) {
         params.format = COMMON_CHAT_FORMAT_CHATGLM;
     }
     
