@@ -2592,6 +2592,22 @@ static void common_chat_parse_chatglm(common_chat_msg_parser & builder) {
     builder.add_content(builder.consume_rest());
 }
 
+static common_chat_params common_chat_params_init_chatglm(const common_chat_template & tmpl, const struct templates_params & inputs) {
+    common_chat_params data;
+    data.prompt = apply(tmpl, inputs);
+    data.format = COMMON_CHAT_FORMAT_CHATGLM;
+    data.grammar_lazy = false;
+    if (!inputs.json_schema.is_null()) {
+        if (!inputs.grammar.empty()) {
+            throw std::runtime_error("Either \"json_schema\" or \"grammar\" can be specified, but not both");
+        }
+        data.grammar = json_schema_to_grammar(inputs.json_schema);
+    } else {
+        data.grammar = inputs.grammar;
+    }
+    return data;
+}
+
 static common_chat_params common_chat_params_init_without_tools(const common_chat_template & tmpl, const struct templates_params & inputs) {
     common_chat_params data;
     data.prompt = apply(tmpl, inputs);
@@ -2730,7 +2746,7 @@ static common_chat_params common_chat_templates_apply_jinja(
 
     // GLM models
     if ((src.find("gMASK") != std::string::npos && params.json_schema.is_null())) {
-        return common_chat_params_init_without_tools(tmpl, params);
+        return common_chat_params_init_chatglm(tmpl, params);
     }
 
     // Hermes 2/3 Pro, Qwen 2.5 Instruct (w/ tools)
