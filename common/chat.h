@@ -116,8 +116,9 @@ enum common_chat_format {
     COMMON_CHAT_FORMAT_SEED_OSS,
     COMMON_CHAT_FORMAT_NEMOTRON_V2,
     COMMON_CHAT_FORMAT_APERTUS,
+    COMMON_CHAT_FORMAT_GLM4,
 
-    COMMON_CHAT_FORMAT_COUNT, // Not a format, just the # formats
+    COMMON_CHAT_FORMAT_COUNT,  // Not a format, just the # formats
 };
 
 struct common_chat_templates_inputs {
