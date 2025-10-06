@@ -640,6 +640,7 @@ const char * common_chat_format_name(common_chat_format format) {
         case COMMON_CHAT_FORMAT_SEED_OSS: return "Seed-OSS";
         case COMMON_CHAT_FORMAT_NEMOTRON_V2: return "Nemotron V2";
         case COMMON_CHAT_FORMAT_APERTUS: return "Apertus";
+        case COMMON_CHAT_FORMAT_CHATGLM: return "ChatGLM";
         default:
             throw std::runtime_error("Unknown chat format");
     }
@@ -2585,6 +2586,12 @@ static void common_chat_parse_seed_oss(common_chat_msg_parser & builder) {
     }
 }
 
+static void common_chat_parse_chatglm(common_chat_msg_parser & builder) {
+    // Parse thinking tags
+    builder.try_parse_reasoning("<think>", "</think>");    
+    builder.add_content(builder.consume_rest());
+}
+
 static common_chat_params common_chat_params_init_without_tools(const common_chat_template & tmpl, const struct templates_params & inputs) {
     common_chat_params data;
     data.prompt = apply(tmpl, inputs);
@@ -2848,6 +2855,16 @@ static common_chat_params common_chat_templates_apply_legacy(
     } else {
         params.grammar = inputs.grammar;
     }
+    
+    // Detect GLM templates and set appropriate format for reasoning content extraction
+    const auto & template_source = tmpls->template_default->source();
+    if (template_source.find("chatglm") != std::string::npos || 
+        template_source.find("glm") != std::string::npos ||
+        template_source.find("[gMASK]") != std::string::npos ||
+        template_source.find("<|assistant|>") != std::string::npos) {
+        params.format = COMMON_CHAT_FORMAT_CHATGLM;
+    }
+    
     return params;
 }
 
@@ -2922,6 +2939,9 @@ static void common_chat_parse(common_chat_msg_parser & builder) {
             break;
         case COMMON_CHAT_FORMAT_APERTUS:
             common_chat_parse_apertus(builder);
+            break;
+        case COMMON_CHAT_FORMAT_CHATGLM:
+            common_chat_parse_chatglm(builder);
             break;
         default:
             throw std::runtime_error(std::string("Unsupported format: ") + common_chat_format_name(builder.syntax().format));
